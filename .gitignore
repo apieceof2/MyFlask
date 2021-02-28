@@ -1,2 +1,4 @@
 flask.py
 /.idea
+*.pyc
+.gitignore
