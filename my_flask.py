@@ -1,4 +1,4 @@
-from werkzeug import Request, Response, LocalStack
+from werkzeug import Request, Response
 from werkzeug.routing import Rule, Map
 
 
@@ -49,7 +49,3 @@ class FlaskAPP(object):
         endpoint, args = self.url_adapter.match()
         return self.view_funcs[endpoint](**args)
 
-if __name__ == '__main__':
-    from werkzeug.serving import run_simple
-    app = FlaskAPP(__name__)
-    run_simple('127.0.0.1', 5000, app)
