@@ -33,9 +33,9 @@ class FlaskAPP(object):
         def index2():
             return "index2"
         self.url_map.add(Rule("/test/index1", endpoint=index1.__name__))
-        self.view_funcs['/test/index1'] = index1
+        self.view_funcs[index1.__name__] = index1
         self.url_map.add(Rule("/test/index2", endpoint=index2.__name__))
-        self.view_funcs['/test/index2'] = index2
+        self.view_funcs[index2.__name__] = index2
 
     def wsgi_app(self, environ, start_response):
         rv = self.dispatch_request(environ)    # 通过 environ 导向视图函数执行, 返回的是视图函数的返回值
