@@ -1,5 +1,22 @@
 from werkzeug import Request, Response
+from werkzeug.local import LocalStack
 from werkzeug.routing import Rule, Map
+
+
+class _RequestContext(object):
+    def __init__(self, app, environ):
+        self.app = app
+
+        # 将当前请求的url_adapter注入
+        self.url_adapter = self.app.url_map.bind_to_environ(environ)
+
+    def __enter__(self):
+        _request_ctx_stack.push(self)
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """如果没有出错, 直接pop"""
+        if exc_tb is None:
+            _request_ctx_stack.pop()
 
 
 class FlaskAPP(object):
@@ -38,14 +55,26 @@ class FlaskAPP(object):
         self.view_funcs[index2.__name__] = index2
 
     def wsgi_app(self, environ, start_response):
-        rv = self.dispatch_request(environ)    # 通过 environ 导向视图函数执行, 返回的是视图函数的返回值
-        response = Response(rv)    # 构建Response
-        return response(environ, start_response)    # 响应
+        # 使用上下文, 现在使用对资源的调用可以直接使用_request_ctx_stack
+        with self.request_context(environ):
+            # 原来这里是 rv = self.dispatch_request(environ)
+            rv = self.dispatch_request()
+            response = Response(rv)    # 构建Response
+            return response(environ, start_response)    # 响应
 
-    def dispatch_request(self, environ):
+    def dispatch_request(self):
         """通过environ找到视图函数 执行并返回其返回值
         """
-        self.url_adapter = self.url_map.bind_to_environ(environ)
-        endpoint, args = self.url_adapter.match()
+        endpoint, args = self.match_request()
         return self.view_funcs[endpoint](**args)
 
+    @staticmethod
+    def match_request():
+        rv = _request_ctx_stack.top.url_adapter.match()
+        return rv
+
+    def request_context(self, environ):
+        return _RequestContext(self, environ)
+
+
+_request_ctx_stack = LocalStack()
