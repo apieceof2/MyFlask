@@ -1,6 +1,8 @@
-from werkzeug import Request, Response
+from werkzeug import Response
+from werkzeug.exceptions import HTTPException
 from werkzeug.local import LocalStack
 from werkzeug.routing import Rule, Map
+from functools import wraps
 
 
 class _RequestContext(object):
@@ -20,21 +22,21 @@ class _RequestContext(object):
 
 
 class FlaskAPP(object):
-    def __init__(self, package_name):
+    def __init__(self, package_name, debug=True):
+        # 是否开启debug
+        self.debug = debug
+
         # 用来记录Rule的Map
         self.url_map = Map()
-
-        # 用来匹配URL的Adapter
-        self.url_adapter = None
 
         # key为endpoint, 也就是某个视图函数的标识符, 这里使用函数名作为endpoint. value为函数
         self.view_funcs = {}
 
+        # key为error code, value为函数
+        self.error_handlers = {}
+
         # 设置包名
         self.package_name = package_name
-
-        # 临时的一个路由注册函数, 以后会删掉
-        self.router_register()
 
     def __call__(self, environ, start_response):
         """程序的入口, 每次请求都会调用本函数, 实际的响应通过wsgi_app实现
@@ -43,16 +45,18 @@ class FlaskAPP(object):
         """
         return self.wsgi_app(environ, start_response)
 
-    def router_register(self):
-        def index1():
-            return "index1"
+    def route(self, url, **options):
+        def wrapper(func):
+            self.url_map.add(Rule(url, endpoint=func.__name__, **options))
+            self.view_funcs[func.__name__] = func
+            return func
+        return wrapper
 
-        def index2():
-            return "index2"
-        self.url_map.add(Rule("/test/index1", endpoint=index1.__name__))
-        self.view_funcs[index1.__name__] = index1
-        self.url_map.add(Rule("/test/index2", endpoint=index2.__name__))
-        self.view_funcs[index2.__name__] = index2
+    def error_handler(self, error_code):
+        def wrapper(func):
+            self.error_handlers[error_code] = func
+            return func
+        return wrapper
 
     def wsgi_app(self, environ, start_response):
         # 使用上下文, 现在使用对资源的调用可以直接使用_request_ctx_stack
@@ -65,8 +69,21 @@ class FlaskAPP(object):
     def dispatch_request(self):
         """通过environ找到视图函数 执行并返回其返回值
         """
-        endpoint, args = self.match_request()
-        return self.view_funcs[endpoint](**args)
+        try:
+            endpoint, args = self.match_request()
+            return self.view_funcs[endpoint](**args)
+        except HTTPException as e:
+            handler = self.error_handlers[e.code]
+            if handler:
+                return handler()
+            else:
+                return e
+        except Exception as e:
+            handler = self.error_handlers[500]
+            if self.debug or handler is None:
+                raise
+            else:
+                return handler(e)
 
     @staticmethod
     def match_request():
