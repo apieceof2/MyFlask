@@ -32,6 +32,12 @@ class FlaskAPP(object):
         # key为endpoint, 也就是某个视图函数的标识符, 这里使用函数名作为endpoint. value为函数
         self.view_funcs = {}
 
+        # before_requests钩子
+        self.before_requests = []
+
+        # after_requests钩子
+        self.after_requests = []
+
         # key为error code, value为函数
         self.error_handlers = {}
 
@@ -46,6 +52,7 @@ class FlaskAPP(object):
         return self.wsgi_app(environ, start_response)
 
     def route(self, url, **options):
+        """视图函数装饰器"""
         def wrapper(func):
             self.url_map.add(Rule(url, endpoint=func.__name__, **options))
             self.view_funcs[func.__name__] = func
@@ -53,17 +60,40 @@ class FlaskAPP(object):
         return wrapper
 
     def error_handler(self, error_code):
+        """错误处理的装饰器"""
         def wrapper(func):
             self.error_handlers[error_code] = func
             return func
         return wrapper
 
+    def before_request(self, func):
+        self.before_requests.append(func)
+        return func
+
+    def after_request(self, func):
+        self.after_requests.append(func)
+        return func
+
+    def preprocess_request(self):
+        for f in self.before_requests:
+            rv = f()
+            if rv is not None:
+                return rv
+
+    def process_response(self, response):
+        for f in self.after_requests:
+            rv = f(response)
+            if rv is not None:
+                return rv
+
     def wsgi_app(self, environ, start_response):
         # 使用上下文, 现在使用对资源的调用可以直接使用_request_ctx_stack
         with self.request_context(environ):
-            # 原来这里是 rv = self.dispatch_request(environ)
-            rv = self.dispatch_request()
+            rv = self.preprocess_request()
+            if rv is None:
+                rv = self.dispatch_request()
             response = Response(rv)    # 构建Response
+            self.process_response(response)
             return response(environ, start_response)    # 响应
 
     def dispatch_request(self):

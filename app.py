@@ -14,5 +14,10 @@ def error404():
     return "傻逼"
 
 
+@app.before_request
+def a():
+    return 'haha'
+
+
 if __name__ == '__main__':
     run_simple('127.0.0.1', 5000, app)
